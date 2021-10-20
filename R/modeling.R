@@ -38,7 +38,7 @@
 #'
 #' @export
 #'
-computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "median"), trim = NULL, LR.use = NULL, raw.use = TRUE, population.size = FALSE, do.fast = TRUE, nboot = 100, seed.use = 1L, Kh = 0.5, n = 1) {
+computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "median"), trim = NULL, LR.use = NULL, raw.use = TRUE, population.size = FALSE, do.fast = TRUE, nboot = 100, seed.use = 1L, Kh = 0.5, n = 1, prior=NULL) {
   type <- match.arg(type)
   FunMean <- switch(type,
                     triMean = triMean,
@@ -99,6 +99,17 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
     dataLavg2 <- t(replicate(nrow(dataLavg), as.numeric(table(group))/nC))
     dataRavg2 <- dataLavg2
 
+    # compute prior matrix for interactions between groups if not specified
+    if (is.null(prior)) {
+      if (population.size) {
+        # class population based
+        prior <- Matrix::crossprod(matrix(dataLavg2[i,], nrow = 1), matrix(dataRavg2[i,], nrow = 1))
+      } else {
+        # uniformly 1
+        prior <- matrix(1, nrow = numCluster, ncol = numCluster)
+      }
+    }
+
     # compute the expression of agonist and antagonist
     index.agonist <- which(!is.na(pairLRsig$agonist) & pairLRsig$agonist != "")
     index.antagonist <- which(!is.na(pairLRsig$antagonist) & pairLRsig$antagonist != "")
@@ -143,12 +154,8 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
         } else {
           P3 <- matrix(1, nrow = numCluster, ncol = numCluster)
         }
-        # number of cells
-        if (population.size) {
-          P4 <- Matrix::crossprod(matrix(dataLavg2[i,], nrow = 1), matrix(dataRavg2[i,], nrow = 1))
-        } else {
-          P4 <- matrix(1, nrow = numCluster, ncol = numCluster)
-        }
+        P4 <- prior
+
 
         Pnull = P1*P2*P3*P4
         Prob[ , , i] <- Pnull
@@ -181,16 +188,20 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
             } else {
               P3.boot <- matrix(1, nrow = numCluster, ncol = numCluster)
             }
-
-            if (population.size) {
-              groupboot <- group[permutation[, nE]]
-              dataLavg2B <- as.numeric(table(groupboot))/nC
-              dataLavg2B <- matrix(dataLavg2B, nrow = 1)
-              dataRavg2B <- dataLavg2B
-              P4.boot = Matrix::crossprod(dataLavg2B, dataRavg2B)
+            if (is.null(prior)){
+              if (population.size) {
+                groupboot <- group[permutation[, nE]]
+                dataLavg2B <- as.numeric(table(groupboot))/nC
+                dataLavg2B <- matrix(dataLavg2B, nrow = 1)
+                dataRavg2B <- dataLavg2B
+                P4.boot = Matrix::crossprod(dataLavg2B, dataRavg2B)
+              } else {
+                P4.boot = matrix(1, nrow = numCluster, ncol = numCluster)
+              }
             } else {
-              P4.boot = matrix(1, nrow = numCluster, ncol = numCluster)
+              P4.boot = prior
             }
+
 
             Pboot = P1.boot*P2.boot*P3.boot*P4.boot
             return(as.vector(Pboot))
@@ -205,6 +216,8 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
     }
     close(con = pb)
   } else {
+    # TODO: make spatial stuff work here too
+
     # compute the expression of ligand and receptor
     dataL <- computeExpr_LR(geneL, data.use, complex_input)
     dataR <- computeExpr_LR(geneR, data.use, complex_input)
@@ -225,6 +238,17 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
     dataLavg2 <- t(dataLavg2[,-1])/nC
     dataRavg2 <- aggregate(t(dataR.binary), list(group), FUN = sum)
     dataRavg2 <- t(dataRavg2[,-1])/nC
+
+    # compute prior matrix for interactions between groups if not specified
+    if (is.null(prior)) {
+      if (population.size) {
+        # class population based
+        prior <- Matrix::crossprod(matrix(dataLavg2[i,], nrow = 1), matrix(dataRavg2[i,], nrow = 1))
+      } else {
+        # uniformly 1
+        prior <- matrix(1, nrow = numCluster, ncol = numCluster)
+      }
+    }
 
     # compute the expression of agonist and antagonist
     index.agonist <- which(!is.na(pairLRsig$agonist) & pairLRsig$agonist != "")
