@@ -38,7 +38,8 @@
 #'
 #' @export
 #'
-computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "median"), trim = NULL, LR.use = NULL, raw.use = TRUE, population.size = FALSE, do.fast = TRUE, nboot = 100, seed.use = 1L, Kh = 0.5, n = 1, prior=NULL) {
+computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "median"), trim = NULL, LR.use = NULL, raw.use = TRUE, population.size = FALSE,
+                              do.fast = TRUE, nboot = 100, seed.use = 1L, Kh = 0.5, n = 1, prior.thresholds=NULL, pos=NULL) {
   type <- match.arg(type)
   FunMean <- switch(type,
                     triMean = triMean,
@@ -58,6 +59,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
   cofactor_input <- object@DB$cofactor
   my.sapply <- ifelse(
     test = future::nbrOfWorkers() == 1,
+
     yes = sapply,
     no = future.apply::future_sapply
   )
@@ -83,6 +85,18 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
   data.use <- data/max(data)
   nC <- ncol(data.use)
 
+  if (!is.null(pos)) {
+    # TODO: check prior.thresholds has the necessary values
+    assert(ncol(pos)==2 || ncol(pos)==3)
+
+    # TODO: more efficient code for creating sparse matrix
+    d = as.matrix(dist(pos))
+    FUN = function(t) {
+      Matrix(d < t, sparse=TRUE)
+    }
+    neighbors = lapply(prior.thresholds, FUN)
+  }
+
   if (do.fast) {
     # compute the average expression per group
     data.use.avg <- aggregate(t(data.use), list(group), FUN = FunMean)
@@ -100,7 +114,9 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
     dataRavg2 <- dataLavg2
 
     # compute prior matrix for interactions between groups if not specified
-    if (is.null(prior)) {
+    if (!is.null(prior.thresholds)) {
+      # go through each interaction type and compute the prior for that type
+    } else {
       if (population.size) {
         # class population based
         prior <- Matrix::crossprod(matrix(dataLavg2[i,], nrow = 1), matrix(dataRavg2[i,], nrow = 1))
@@ -154,6 +170,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
         } else {
           P3 <- matrix(1, nrow = numCluster, ncol = numCluster)
         }
+        # TODO: Figure out the type of interaction and grab the right prior matrix
         P4 <- prior
 
 
