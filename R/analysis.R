@@ -1869,7 +1869,7 @@ subsetCommunication <- function(object = NULL, net = NULL, slot.name = "net",
                                 receptor.pvalues = NULL, receptor.logFC = NULL, receptor.pct.1 = NULL, receptor.pct.2 = NULL) {
   if (!is.null(pairLR.use)) {
     if (!is.data.frame(pairLR.use)) {
-      stop("pairLR.use should be a data frame with a signle column named either 'interaction_name' or 'pathway_name' ")
+      stop("pairLR.use should be a data frame with a single column named either 'interaction_name' or 'pathway_name' ")
     } else if ("pathway_name" %in% colnames(pairLR.use)) {
       message("slot.name is set to be 'netP' when pairLR.use contains signaling pathways")
       slot.name = "netP"

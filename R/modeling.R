@@ -70,6 +70,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
   group <- object@idents
   geneL <- as.character(pairLRsig$ligand)
   geneR <- as.character(pairLRsig$receptor)
+  annotations <- as.character(pairLRsig$annotation)
   nLR <- nrow(pairLRsig)
   numCluster <- nlevels(group)
   if (numCluster != length(unique(group))) {
@@ -95,7 +96,19 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
       Matrix(d < t, sparse=TRUE)
     }
     neighbors = lapply(prior.thresholds, FUN)
+
+    neighbors.to.prior <- function(m, ids) {
+      nearby_ijx <- as.matrix(summary(m %*% sparseMatrix(1:length(ids), ids)))
+      i = nearby_ijx[,"i"]
+      j = nearby_ijx[,"j"]
+      x = nearby_ijx[,"x"]
+      i = ids[i]
+      # We want sparse (i,j,x) constructor but resulting matrix isn't sparse
+      m = Matrix(sparseMatrix(i,j,x=x), sparse=FALSE)
+      m / sum(m)
+    }
   }
+
 
   if (do.fast) {
     # compute the average expression per group
@@ -112,19 +125,6 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
 
     dataLavg2 <- t(replicate(nrow(dataLavg), as.numeric(table(group))/nC))
     dataRavg2 <- dataLavg2
-
-    # compute prior matrix for interactions between groups if not specified
-    if (!is.null(prior.thresholds)) {
-      # go through each interaction type and compute the prior for that type
-    } else {
-      if (population.size) {
-        # class population based
-        prior <- Matrix::crossprod(matrix(dataLavg2[i,], nrow = 1), matrix(dataRavg2[i,], nrow = 1))
-      } else {
-        # uniformly 1
-        prior <- matrix(1, nrow = numCluster, ncol = numCluster)
-      }
-    }
 
     # compute the expression of agonist and antagonist
     index.agonist <- which(!is.na(pairLRsig$agonist) & pairLRsig$agonist != "")
@@ -145,6 +145,30 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
       },
       simplify = FALSE
     )
+
+    # compute prior matrix for interactions between groups if not specified
+    if (!is.null(prior.thresholds)) {
+      # go through each interaction type and compute the prior for that type
+      prior.by.type = lapply(neighbors, function(m) neighbors.to.prior(m, group))
+
+      # also compute prior.by.type for each permutation for bootstrapping
+      prior.by.type.boot = lapply(
+        X = 1:nboot,
+        FUN = function(nE) {
+          groupboot <- group[permutation[, nE]]
+          lapply(neighbors, function(m) neighbors.to.prior(m, groupboot))
+        }
+      )
+    } else {
+      if (population.size) {
+        # class population based
+        prior <- Matrix::crossprod(matrix(dataLavg2[i,], nrow = 1), matrix(dataRavg2[i,], nrow = 1))
+      } else {
+        # uniformly 1
+        prior <- matrix(1, nrow = numCluster, ncol = numCluster)
+      }
+    }
+
     pb <- txtProgressBar(min = 0, max = nLR, style = 3, file = stderr())
 
     for (i in 1:nLR) {
@@ -171,7 +195,16 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
           P3 <- matrix(1, nrow = numCluster, ncol = numCluster)
         }
         # TODO: Figure out the type of interaction and grab the right prior matrix
-        P4 <- prior
+        if (is.null(pos))
+        {
+          # No spatial position information
+          P4 <- prior
+        } else
+        {
+          # Get the interaction type of this LR pair
+          P4 <- prior.by.type[[annotations[[i]]]]
+        }
+
 
 
         Pnull = P1*P2*P3*P4
@@ -205,7 +238,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
             } else {
               P3.boot <- matrix(1, nrow = numCluster, ncol = numCluster)
             }
-            if (is.null(prior)){
+            if (is.null(prior.by.thresholds)){
               if (population.size) {
                 groupboot <- group[permutation[, nE]]
                 dataLavg2B <- as.numeric(table(groupboot))/nC
@@ -216,7 +249,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
                 P4.boot = matrix(1, nrow = numCluster, ncol = numCluster)
               }
             } else {
-              P4.boot = prior
+              P4.boot = prior.by.type.boot[[nE]][[annotations[[i]]]]
             }
 
 
