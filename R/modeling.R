@@ -25,7 +25,7 @@
 #' @importFrom future.apply future_sapply
 #' @importFrom pbapply pbsapply
 #' @importFrom stats aggregate
-#' @importFrom Matrix crossprod
+#' @importFrom Matrix Matrix crossprod
 #' @importFrom utils txtProgressBar setTxtProgressBar
 #'
 #' @return A CellChat object with updated slot 'net':
@@ -71,6 +71,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
   geneL <- as.character(pairLRsig$ligand)
   geneR <- as.character(pairLRsig$receptor)
   annotations <- as.character(pairLRsig$annotation)
+  # TODO: if appropriate, check that all annotations are actually present in prior.thresholds
   nLR <- nrow(pairLRsig)
   numCluster <- nlevels(group)
   if (numCluster != length(unique(group))) {
@@ -86,9 +87,11 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
   data.use <- data/max(data)
   nC <- ncol(data.use)
 
+  #print("a")
+
   if (!is.null(pos)) {
     # TODO: check prior.thresholds has the necessary values
-    assert(ncol(pos)==2 || ncol(pos)==3)
+    #assert(ncol(pos)==2 || ncol(pos)==3)
 
     # TODO: more efficient code for creating sparse matrix
     d = as.matrix(dist(pos))
@@ -97,8 +100,13 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
     }
     neighbors = lapply(prior.thresholds, FUN)
 
-    neighbors.to.prior <- function(m, ids) {
-      nearby_ijx <- as.matrix(summary(m %*% sparseMatrix(1:length(ids), ids)))
+    #print(dim(neighbors[[1]]))
+    #print(dim(group))
+
+    neighbors.to.prior <- function(m, group) {
+      ids = as.integer(group)
+      v = m %*% sparseMatrix(1:length(ids), ids)
+      nearby_ijx <- as.matrix(summary(v))
       i = nearby_ijx[,"i"]
       j = nearby_ijx[,"j"]
       x = nearby_ijx[,"x"]
@@ -109,6 +117,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
     }
   }
 
+  #print("b")
 
   if (do.fast) {
     # compute the average expression per group
@@ -145,11 +154,12 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
       },
       simplify = FALSE
     )
-
+    #print("c")
     # compute prior matrix for interactions between groups if not specified
     if (!is.null(prior.thresholds)) {
       # go through each interaction type and compute the prior for that type
       prior.by.type = lapply(neighbors, function(m) neighbors.to.prior(m, group))
+      ##print(prior.by.type)
 
       # also compute prior.by.type for each permutation for bootstrapping
       prior.by.type.boot = lapply(
@@ -168,7 +178,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
         prior <- matrix(1, nrow = numCluster, ncol = numCluster)
       }
     }
-
+    #print("d")
     pb <- txtProgressBar(min = 0, max = nLR, style = 3, file = stderr())
 
     for (i in 1:nLR) {
@@ -202,12 +212,23 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
         } else
         {
           # Get the interaction type of this LR pair
-          P4 <- prior.by.type[[annotations[[i]]]]
+          P4 <- as.matrix(prior.by.type[[annotations[[i]]]])
         }
 
+        #print(dim(P1))
+        #print(dim(P2))
+        #print(dim(P3))
+        #print(dim(P4))
 
+        #print(typeof(P1))
+        #print(typeof(P4))
 
         Pnull = P1*P2*P3*P4
+
+        #print(dim(Pnull))
+        #print(dim(Prob))
+        #print(dim(Prob[,,i]))
+
         Prob[ , , i] <- Pnull
 
         Pnull <- as.vector(Pnull)
@@ -238,7 +259,7 @@ computeCommunProb <- function(object, type = c("triMean", "truncatedMean", "medi
             } else {
               P3.boot <- matrix(1, nrow = numCluster, ncol = numCluster)
             }
-            if (is.null(prior.by.thresholds)){
+            if (is.null(pos)){
               if (population.size) {
                 groupboot <- group[permutation[, nE]]
                 dataLavg2B <- as.numeric(table(groupboot))/nC
